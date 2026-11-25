@@ -1,0 +1,9 @@
+{
+  "name": "ai-chat-room-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node listener.mjs", "check": "node --check listener.mjs" },
+  "dependencies": { "@supabase/supabase-js": "^2.45.0" }
+}

@@ -1,0 +1,17 @@
+# systemd USER unit template. Install: see README ("Install the bridge on idw-2").
+# Adjust the node path and WorkingDirectory to where this repo lives.
+[Unit]
+Description=AI Chat Room bridge listener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Work/ai-chat-room-build/bridge
+EnvironmentFile=%h/.config/ai-chat-room/bridge.env
+ExecStart=/usr/bin/env node listener.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

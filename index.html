@@ -2,23 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#060b07">
   <title>AI Chat Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div class="ambient" aria-hidden="true"></div>
+
   <section id="login" class="login">
-    <form id="login-form">
-      <h1>AI Chat Room</h1>
+    <form id="login-form" class="glass">
+      <h1>AI <span>Chat Room</span></h1>
       <input id="email" type="email" placeholder="Email" autocomplete="username" required>
       <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
-      <button type="submit">Sign in</button>
+      <button type="submit" class="cta">Sign in</button>
       <p id="login-error" class="error"></p>
     </form>
   </section>
 
   <div id="app" class="app" hidden>
-    <aside class="sidebar">
+    <aside class="sidebar glass">
       <h2>Participants</h2>
       <ul id="participants"></ul>
       <h2>Machines</h2>
@@ -42,21 +48,26 @@
               <option value="idw-2">IDW-2</option>
             </select>
           </label>
-          <button type="submit">Dispatch</button>
+          <button type="submit" class="cta">Dispatch</button>
         </form>
       </details>
       <div class="side-actions">
-        <button id="clear-room" type="button">Clear room</button>
-        <button id="sign-out" type="button">Sign out</button>
+        <button id="clear-room" type="button" class="glass-btn">Clear room</button>
+        <button id="sign-out" type="button" class="glass-btn">Sign out</button>
       </div>
     </aside>
 
     <main class="main">
+      <header class="room-head glass">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <h1>AI <span>Chat Room</span></h1>
+        <span class="head-note">Live lanes · IDW-2 bridge</span>
+      </header>
       <div id="messages" class="messages"></div>
-      <form id="composer" class="composer">
+      <form id="composer" class="composer glass">
         <select id="c-target"></select>
         <input id="c-text" type="text" placeholder="Message…" autocomplete="off" required>
-        <button type="submit">Send</button>
+        <button type="submit" class="cta">Send</button>
       </form>
       <p id="status" class="status"></p>
     </main>

@@ -1,5 +1,5 @@
-// Placeholder config. Replace with real values (see README). Anon key is public by design.
+// Live config. Anon/publishable key is public by design; data is protected by RLS + signups disabled.
 window.CHAT_CONFIG = {
-  SUPABASE_URL: "https://YOUR-PROJECT-REF.supabase.co",
-  SUPABASE_ANON_KEY: "YOUR-ANON-PUBLIC-KEY",
+  SUPABASE_URL: "https://jzkmwqyqstswimqupyvo.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_V711wmgS0KMtLV8D9JmbZQ_qpOgrzEB",
 };

@@ -24,53 +24,109 @@
   </section>
 
   <div id="app" class="app" hidden>
-    <aside class="sidebar glass">
-      <h2>Participants</h2>
-      <ul id="participants"></ul>
-      <h2>Machines</h2>
-      <ul id="machines"></ul>
-      <details class="dispatch">
-        <summary>Live Dispatch</summary>
-        <form id="dispatch-form">
-          <textarea id="d-prompt" rows="4" placeholder="Prompt" required></textarea>
-          <label>Lane <select id="d-lane"></select></label>
-          <label>Complexity
-            <select id="d-complexity">
-              <option value="auto">Auto</option>
-              <option value="light">Light</option>
-              <option value="complex">Complex</option>
-            </select>
-          </label>
-          <label>Route
-            <select id="d-route">
-              <option value="auto">Auto</option>
-              <option value="mac">Mac</option>
-              <option value="idw-2">IDW-2</option>
-            </select>
-          </label>
-          <button type="submit" class="cta">Dispatch</button>
-        </form>
-      </details>
+    <header class="room-head glass">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1>AI <span>Chat Room</span></h1>
+      <span class="head-note">Live lanes · IDW-2 bridge</span>
+    </header>
+
+    <!-- STATUS -->
+    <section id="view-status" class="view scroll-view" hidden>
+      <h2 class="section-title">Machines</h2>
+      <ul id="st-machines" class="row-list"></ul>
+      <h2 class="section-title">Participants</h2>
+      <ul id="st-participants" class="row-list"></ul>
+      <h2 class="section-title">Recent jobs</h2>
+      <div id="st-jobs" class="job-list"></div>
       <div class="side-actions">
         <button id="clear-room" type="button" class="glass-btn">Clear room</button>
         <button id="sign-out" type="button" class="glass-btn">Sign out</button>
       </div>
-    </aside>
+    </section>
 
-    <main class="main">
-      <header class="room-head glass">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <h1>AI <span>Chat Room</span></h1>
-        <span class="head-note">Live lanes · IDW-2 bridge</span>
-      </header>
-      <div id="messages" class="messages"></div>
-      <form id="composer" class="composer glass">
-        <select id="c-target"></select>
-        <input id="c-text" type="text" placeholder="Message…" autocomplete="off" required>
-        <button type="submit" class="cta">Send</button>
-      </form>
-      <p id="status" class="status"></p>
-    </main>
+    <!-- DIRECT MESSAGES -->
+    <section id="view-dms" class="view" hidden>
+      <div id="dm-list-wrap" class="scroll-view">
+        <h2 class="section-title">Direct messages</h2>
+        <ul id="dm-list" class="row-list"></ul>
+      </div>
+      <div id="dm-thread" class="thread" hidden>
+        <div class="thread-head glass">
+          <button id="dm-back" type="button" class="glass-btn back-btn">‹ Back</button>
+          <span id="dm-title" class="thread-title"></span>
+          <span id="dm-presence" class="thread-sub"></span>
+        </div>
+        <div id="dm-messages" class="messages"></div>
+        <div class="composer-slot"></div>
+      </div>
+    </section>
+
+    <!-- CHANNELS -->
+    <section id="view-channels" class="view" hidden>
+      <div id="ch-list-wrap" class="scroll-view">
+        <h2 class="section-title">Channels</h2>
+        <ul id="ch-list" class="row-list"></ul>
+      </div>
+      <div id="ch-thread" class="thread" hidden>
+        <div class="thread-head glass">
+          <button id="ch-back" type="button" class="glass-btn back-btn">‹ Back</button>
+          <span id="ch-title" class="thread-title"></span>
+        </div>
+        <div id="general-wrap" class="thread-body">
+          <div id="ch-messages" class="messages"></div>
+          <div class="composer-slot"></div>
+        </div>
+        <div id="dispatch-wrap" class="thread-body scroll-view" hidden>
+          <form id="dispatch-form" class="dispatch-form glass">
+            <textarea id="d-prompt" rows="3" placeholder="Dispatch prompt" required></textarea>
+            <div class="dispatch-fields">
+              <label>Lane <select id="d-lane"></select></label>
+              <label>Complexity
+                <select id="d-complexity">
+                  <option value="auto">Auto</option>
+                  <option value="light">Light</option>
+                  <option value="complex">Complex</option>
+                </select>
+              </label>
+              <label>Route
+                <select id="d-route">
+                  <option value="auto">Auto</option>
+                  <option value="mac">Mac</option>
+                  <option value="idw-2">IDW-2</option>
+                </select>
+              </label>
+            </div>
+            <button type="submit" class="cta">Dispatch</button>
+          </form>
+          <div id="jobs-list" class="job-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Shared composer: JS moves it into the active conversation -->
+    <form id="composer" class="composer glass">
+      <span id="c-to" class="composer-to" hidden></span>
+      <select id="c-target"></select>
+      <input id="c-text" type="text" placeholder="Message…" autocomplete="off" required>
+      <button type="submit" class="cta">Send</button>
+    </form>
+    <p id="status" class="status"></p>
+
+    <nav class="tab-bar glass" aria-label="Chat Room">
+      <button type="button" class="tab" data-tab="status">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12L16 12h5"/></svg>
+        <span>Status</span>
+      </button>
+      <button type="button" class="tab" data-tab="dms">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H4l2.3-2.9A8 8 0 1 1 21 12Z"/></svg>
+        <span>Messages</span>
+      </button>
+      <button type="button" class="tab" data-tab="channels">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 7 20M17 4l-2 16M4 9h17M3 15h17"/></svg>
+        <span>Channels</span>
+        <span id="jobs-badge" class="tab-badge" hidden></span>
+      </button>
+    </nav>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

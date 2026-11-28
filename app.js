@@ -12,7 +12,7 @@
     { lane: "opencode", name: "OpenCode", role: "idw-2 lane", machine: "idw-2" },
     { lane: "grok", name: "Grok", role: "idw-2 lane", machine: "idw-2" },
     { lane: "hermes", name: "Hermes", role: "Mac-only lane", machine: "idw-m1-mac" },
-    { lane: null, name: "Meta AI", role: "No live lane — simulated only", machine: null },
+    { lane: "meta", name: "Meta AI", role: "Live via meta.ai on M1 Mac", machine: "idw-m1-mac" },
   ];
   const MACHINES = [
     { id: "idw-2", label: "IDW-2" },
@@ -443,15 +443,6 @@
       const um = await sb.from("messages").insert({ sender: "Isaac", kind: "user", content: text, agent: target });
       if (um.error) throw um.error;
       $("c-text").value = "";
-      if (target === "meta") {
-        // Honest: no lane exists, nothing is queued, nothing is faked.
-        const r = await sb.from("messages").insert({
-          sender: "System", kind: "system", agent: "Meta AI",
-          content: "Meta AI has no live lane — simulated only. Nothing was queued.",
-        });
-        if (r.error) throw r.error;
-        return;
-      }
       if (target === "room") target = "muse";
       await queueJob({ kind: "chat", lane: target, prompt: text });
     } catch (err) {

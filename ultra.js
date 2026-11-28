@@ -1,6 +1,7 @@
-// Ultra Dashboard Phase 3 frontend. No build step.
+// Ultra Dashboard Phase 4 frontend. No build step.
 // Reads: Supabase selects + realtime subscriptions + auth.
-// WRITE ALLOWLIST (Phase 3, Isaac-click + confirm only, nothing else):
+// WRITE ALLOWLIST (Phase 4 — unchanged since Phase 3, Isaac-click +
+// confirm only, nothing else):
 //   (a) jobs INSERT via insertJob() — the one shared code path for
 //       Retry / Re-run AND Dispatch (global + follow-up), dispatch shape.
 //   (b) jobs UPDATE of status to 'cancelled' in cancelJob() — one job id.
@@ -55,6 +56,13 @@
   let channel = null;
   let lastUpdatedAt = null;
   let countsTimer = null;
+  let railSelection = null; // { type: "lane", lane } | { type: "machine", id } — in-memory UI state only, never stored
+  // Bot HQ lives on the Mac (server on localhost:8787 there). Its
+  // Tailscale Serve endpoint was re-verified from idw-2 on 2026-11-28
+  // (GET /api/health and GET / both HTTP 200), so the fleet rail links
+  // to it, tailnet only. The rail copies nothing from Bot HQ.
+  const BOTHQ_URL = "http://idw-m1-mac.tail2637a8.ts.net:8788";
+  const BOTHQ_SERVE_OK = true;
 
   function setStatus(text) { $("status").textContent = text || ""; }
 
@@ -114,7 +122,7 @@
 
   async function onSession(session) {
     showApp(!!session);
-    if (!session) { teardown(); return; }
+    if (!session) { closeRail(); teardown(); return; }
     await loadAll();
     subscribe();
     renderAll();
@@ -460,7 +468,7 @@
   function renderFleet() {
     $("fleet-machines").replaceChildren(...MACHINES.map((m) => {
       const li = document.createElement("li");
-      li.className = "row-item static";
+      li.className = "row-item";
       const dot = document.createElement("span");
       dot.className = "dot " + (isOnline(m.id) ? "on" : "off");
       const label = document.createElement("span");
@@ -473,13 +481,14 @@
         ? (isOnline(m.id) ? "online" : "offline") + " · heartbeat " + fmtDateTime(pr.checked_at) + (pr.detail ? " · " + pr.detail : "")
         : "no heartbeat data yet";
       label.append(name, sub);
+      activatable(li, { type: "machine", id: m.id });
       li.append(dot, label);
       return li;
     }));
     const all = sortedJobs();
     $("fleet-lanes").replaceChildren(...PARTICIPANTS.map((p) => {
       const li = document.createElement("li");
-      li.className = "row-item static";
+      li.className = "row-item";
       li.style.setProperty("--agent", colorFor(p.name));
       const dot = document.createElement("span");
       dot.className = "dot " + (isOnline(p.machine) ? "on" : "off");
@@ -493,9 +502,231 @@
         ? "last job: " + last.status + " · " + fmtDateTime(last.created_at) + " · @ " + p.machine
         : "no jobs yet · @ " + p.machine;
       label.append(name, sub);
+      activatable(li, { type: "lane", lane: p.lane });
       li.append(dot, label);
       return li;
     }));
+  }
+
+  // ---------- Fleet rail (Phase 4) ----------
+  // Selecting a fleet machine or lane opens this contextual rail. It
+  // renders only from the in-memory jobs/presence data the page already
+  // loaded: no new reads, and NO new writes — its one action reuses the
+  // Phase 3 dispatch form and its confirm flow. Rail selection is
+  // in-memory UI state only; it is never written to localStorage.
+  function activatable(li, sel) {
+    li.classList.add("clickable");
+    const selNow = railSelection;
+    const isSel = !!selNow && selNow.type === sel.type &&
+      (sel.type === "lane" ? selNow.lane === sel.lane : selNow.id === sel.id);
+    li.classList.toggle("selected", isSel);
+    li.setAttribute("role", "button");
+    li.setAttribute("tabindex", "0");
+    li.addEventListener("click", () => openRail(sel));
+    li.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openRail(sel); }
+    });
+  }
+  function openRail(sel) { railSelection = sel; renderRail(); renderFleet(); }
+  function closeRail() {
+    railSelection = null;
+    const r = $("rail");
+    if (r) r.hidden = true;
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (document.querySelector("dialog[open]")) return; // dialogs handle their own Esc
+    if (railSelection) { closeRail(); renderFleet(); }
+  });
+  $("rail-close").addEventListener("click", () => { closeRail(); renderFleet(); });
+
+  function jobsForLane(lane) { return sortedJobs().filter((j) => j.lane === lane); }
+  function jobsForMachine(id) { return sortedJobs().filter((j) => displayMachine(j) === id); }
+  function statusCounts(list) {
+    const m = new Map();
+    list.forEach((j) => m.set(j.status, (m.get(j.status) || 0) + 1));
+    return m;
+  }
+
+  function railPresenceBlock(machineId) {
+    const wrap = document.createElement("div");
+    wrap.className = "rail-presence";
+    const dot = document.createElement("span");
+    dot.className = "dot " + (isOnline(machineId) ? "on" : "off");
+    const txt = document.createElement("div");
+    const pr = presence.get(machineId);
+    const line = document.createElement("div");
+    line.textContent = pr && pr.checked_at
+      ? (isOnline(machineId) ? "Online" : "Offline") + " · heartbeat " + fmtDateTime(pr.checked_at)
+      : "No heartbeat data yet";
+    txt.append(line);
+    if (pr && pr.detail) {
+      const d = document.createElement("small");
+      d.textContent = pr.detail;
+      txt.append(d);
+    }
+    wrap.append(dot, txt);
+    return wrap;
+  }
+
+  function railCountsBlock(list) {
+    const wrap = document.createElement("div");
+    const h = document.createElement("h3");
+    h.className = "sub-title"; h.textContent = "Jobs by status";
+    wrap.append(h);
+    const countsEl = document.createElement("div");
+    countsEl.className = "rail-counts";
+    const m = statusCounts(list);
+    if (!m.size) {
+      const b = document.createElement("span");
+      b.className = "badge"; b.textContent = "no jobs yet";
+      countsEl.append(b);
+    } else {
+      [...m.entries()].forEach(([st, n]) => {
+        const b = document.createElement("span");
+        b.className = "badge job-" + st;
+        b.textContent = st + ": " + n;
+        countsEl.append(b);
+      });
+    }
+    wrap.append(countsEl);
+    return wrap;
+  }
+
+  function railRecentBlock(list) {
+    const wrap = document.createElement("div");
+    const h = document.createElement("h3");
+    h.className = "sub-title"; h.textContent = "Recent jobs";
+    wrap.append(h);
+    const recent = list.slice(0, 5);
+    if (!recent.length) {
+      const p = document.createElement("p");
+      p.className = "col-empty"; p.textContent = "No jobs yet.";
+      wrap.append(p);
+    } else {
+      const jl = document.createElement("div");
+      jl.className = "job-list";
+      recent.forEach((j) => jl.append(buildJobCard(j, openDetail)));
+      wrap.append(jl);
+    }
+    return wrap;
+  }
+
+  function railBotHqBlock() {
+    const wrap = document.createElement("div");
+    wrap.className = "rail-bothq";
+    const h = document.createElement("h3");
+    h.className = "sub-title"; h.textContent = "Bot HQ";
+    wrap.append(h);
+    if (BOTHQ_SERVE_OK) {
+      const a = document.createElement("a");
+      a.className = "glass-btn";
+      a.href = BOTHQ_URL;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "Open Bot HQ";
+      wrap.append(a);
+      const cap = document.createElement("small");
+      cap.textContent = "Bot HQ on your Mac — tailnet only";
+      wrap.append(cap);
+    } else {
+      const p = document.createElement("p");
+      p.textContent = "Bot HQ runs on your Mac at localhost:8787 (on the Mac itself). Its tailnet link did not answer in the latest check.";
+      wrap.append(p);
+    }
+    const s = document.createElement("p");
+    s.textContent = "Bot settings live in Bot HQ (local data on the Mac) and stay there; this rail links to them, it does not copy them.";
+    wrap.append(s);
+    const v = document.createElement("p");
+    v.textContent = "Computer viewer lives in Bot HQ. Its cloud screens are off until real Orgo keys are added in Bot HQ, so there is no viewer to embed yet.";
+    wrap.append(v);
+    return wrap;
+  }
+
+  function renderRail() {
+    const rail = $("rail");
+    if (!rail) return;
+    if (!railSelection || $("app").hidden) { rail.hidden = true; return; }
+    const identity = $("rail-identity");
+    const body = $("rail-body");
+    identity.replaceChildren();
+    body.replaceChildren();
+    if (railSelection.type === "lane") {
+      const p = PARTICIPANTS.find((x) => x.lane === railSelection.lane);
+      if (!p) { rail.hidden = true; return; }
+      identity.style.setProperty("--agent", colorFor(p.name));
+      identity.append(makeAvatar(p.name));
+      const tw = document.createElement("div");
+      const nm = document.createElement("div");
+      nm.className = "rail-name"; nm.textContent = p.name; nm.style.color = colorFor(p.name);
+      const sub = document.createElement("div");
+      sub.className = "rail-sub";
+      const mLabel = (MACHINES.find((m) => m.id === p.machine) || {}).label || p.machine;
+      sub.textContent = p.role + " · @ " + mLabel;
+      tw.append(nm, sub);
+      identity.append(tw);
+      const list = jobsForLane(p.lane);
+      body.append(railPresenceBlock(p.machine));
+      body.append(railCountsBlock(list));
+      body.append(railRecentBlock(list));
+      const act = document.createElement("button");
+      act.type = "button";
+      act.className = "action-btn rail-dispatch";
+      act.textContent = "Dispatch to " + p.name;
+      act.addEventListener("click", () => openDispatch({
+        lane: p.lane,
+        route: p.machine === "idw-m1-mac" ? "mac" : "idw-2",
+      }));
+      body.append(act);
+      body.append(railBotHqBlock());
+    } else {
+      const m = MACHINES.find((x) => x.id === railSelection.id);
+      if (!m) { rail.hidden = true; return; }
+      identity.style.setProperty("--agent", "#8a978c");
+      const av = document.createElement("span");
+      av.className = "avatar";
+      av.textContent = m.id === "idw-m1-mac" ? "M1" : "I2";
+      identity.append(av);
+      const tw = document.createElement("div");
+      const nm = document.createElement("div");
+      nm.className = "rail-name"; nm.textContent = m.label;
+      const sub = document.createElement("div");
+      sub.className = "rail-sub"; sub.textContent = m.id;
+      tw.append(nm, sub);
+      identity.append(tw);
+      const list = jobsForMachine(m.id);
+      body.append(railPresenceBlock(m.id));
+      const lanesWrap = document.createElement("div");
+      const h = document.createElement("h3");
+      h.className = "sub-title"; h.textContent = "Lanes on this machine";
+      lanesWrap.append(h);
+      const ul = document.createElement("div");
+      ul.className = "row-list";
+      PARTICIPANTS.filter((x) => x.machine === m.id).forEach((x) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "row-item clickable rail-lane-btn";
+        b.style.setProperty("--agent", colorFor(x.name));
+        const dot = document.createElement("span");
+        dot.className = "dot " + (isOnline(x.machine) ? "on" : "off");
+        const lab = document.createElement("span");
+        lab.className = "row-main";
+        const nm2 = document.createElement("span");
+        nm2.className = "row-name"; nm2.textContent = x.name; nm2.style.color = colorFor(x.name);
+        const sm = document.createElement("small");
+        sm.textContent = x.role;
+        lab.append(nm2, sm);
+        b.append(dot, lab);
+        b.addEventListener("click", () => openRail({ type: "lane", lane: x.lane }));
+        ul.append(b);
+      });
+      lanesWrap.append(ul);
+      body.append(lanesWrap);
+      body.append(railCountsBlock(list));
+      body.append(railRecentBlock(list));
+      body.append(railBotHqBlock());
+    }
+    rail.hidden = false;
   }
 
   // ---------- Adapters ----------
@@ -699,6 +930,7 @@
     renderNeeds();
     renderBoard();
     renderFleet();
+    renderRail();
     renderAdapters();
   }
 

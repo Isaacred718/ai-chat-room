@@ -377,3 +377,36 @@ input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px var(--lime-tint);
 .x-agent-chip { display: inline-flex; align-items: center; gap: 8px; }
 .x-agent-name { font-family: var(--font-display); font-weight: 700; font-size: 1.12rem; letter-spacing: 0.02em; }
 #x-parent-note { margin-top: 12px; }
+
+/* ---------- Phase 4: fleet rail ---------- */
+.row-item.clickable { cursor: pointer; }
+.row-item.clickable:hover { border-color: var(--line-strong); }
+.row-item.selected { border-color: var(--lime-rim); box-shadow: inset 0 0 0 1px var(--lime-rim); }
+
+.rail {
+  position: fixed; top: 14px; right: 14px; bottom: 14px; z-index: 30;
+  width: min(400px, calc(100vw - 28px));
+  border-radius: var(--r-lg); padding: 18px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px;
+  animation: rail-in 220ms var(--ease-out);
+}
+@keyframes rail-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.rail-head { display: flex; align-items: flex-start; gap: 10px; }
+.rail-identity { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; }
+.rail-identity .avatar { width: 40px; height: 40px; font-size: 0.88rem; }
+.rail-name { font-family: var(--font-display); font-weight: 700; font-size: 1.55rem; line-height: 1.05; letter-spacing: 0.02em; }
+.rail-sub { color: var(--text-3); font-size: 0.9rem; }
+.rail-body { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+.rail-presence { display: flex; gap: 10px; align-items: flex-start; color: var(--text-2); font-weight: 600; }
+.rail-presence .dot { margin-top: 6px; }
+.rail-presence small { display: block; color: var(--text-3); font-weight: 500; margin-top: 2px; }
+.rail-counts { display: flex; flex-wrap: wrap; gap: 6px; }
+.rail-dispatch { align-self: flex-start; }
+.rail-bothq { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; justify-items: start; }
+.rail-bothq .sub-title { margin: 0; }
+.rail-bothq p { margin: 0; color: var(--text-2); font-size: 0.95rem; }
+.rail-bothq small { color: var(--text-3); }
+.rail .sub-title { margin-top: 0; }
+@media (max-width: 600px) {
+  .rail { left: 14px; width: auto; }
+}

@@ -16,7 +16,7 @@
   <section id="login" class="login">
     <form id="login-form" class="glass">
       <h1>Ultra <span>Dashboard</span></h1>
-      <p class="login-sub">Phase 3 · Dispatch from anywhere · Sign in with your Chat Room account</p>
+      <p class="login-sub">Phase 4 · Fleet rail · Sign in with your Chat Room account</p>
       <input id="email" type="email" placeholder="Email" autocomplete="username" required>
       <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
       <button type="submit" class="cta">Sign in</button>
@@ -60,6 +60,7 @@
       <!-- FLEET -->
       <section class="panel">
         <h2 class="section-title">Fleet</h2>
+        <p class="panel-note">Select a machine or a lane to open its rail: presence, recent jobs, counts, and dispatch.</p>
         <h3 class="sub-title">Machines</h3>
         <ul id="fleet-machines" class="row-list"></ul>
         <h3 class="sub-title">Lanes</h3>
@@ -88,6 +89,14 @@
 
       <p id="status" class="status"></p>
     </main>
+
+    <aside id="rail" class="rail glass" hidden aria-label="Fleet rail">
+      <div class="rail-head">
+        <div id="rail-identity" class="rail-identity"></div>
+        <button id="rail-close" type="button" class="glass-btn">Close</button>
+      </div>
+      <div id="rail-body" class="rail-body"></div>
+    </aside>
   </div>
 
   <dialog id="confirm" class="detail glass">

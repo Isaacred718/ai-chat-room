@@ -301,3 +301,51 @@ input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px var(--lime-tint);
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
+
+/* ---------- Phase 2: live indicator, actions, confirm, toast ---------- */
+.live-wrap { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; color: var(--text-3); font-size: 0.88rem; font-weight: 600; }
+.live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-3); flex: none; }
+.live-dot.on { background: var(--lime); box-shadow: 0 0 10px rgba(140, 242, 58, 0.8), 0 0 3px rgba(140, 242, 58, 0.9); animation: live-pulse 2.4s ease-in-out infinite; }
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.live-text { color: var(--text-2); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.78rem; }
+.last-updated { font-variant-numeric: tabular-nums; }
+
+.needs-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.action-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 40px; padding: 0 16px; border-radius: 999px;
+  font-weight: 600; font-size: 0.92rem; color: var(--on-lime);
+  background: linear-gradient(180deg, var(--lime-hi), var(--lime) 55%, var(--lime-lo));
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 8px 18px -8px rgba(120, 220, 40, 0.5);
+  transition: transform 160ms var(--ease-out);
+}
+.action-btn:active { transform: scale(0.97); }
+.action-btn.danger {
+  color: var(--danger-text); background: rgba(229, 83, 75, 0.12);
+  border: 1px solid rgba(255, 158, 147, 0.4); box-shadow: none;
+}
+
+.confirm-body { white-space: pre-wrap; word-break: break-word; color: var(--text-2); font-size: 1rem; line-height: 1.55; margin: 12px 0 0; }
+.confirm-error { text-align: left; margin-top: 10px; }
+.confirm-error:empty { display: none; }
+.confirm-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+.confirm-actions .cta.danger {
+  color: var(--danger-text);
+  background: rgba(229, 83, 75, 0.16);
+  border: 1px solid rgba(255, 158, 147, 0.45);
+  box-shadow: none;
+}
+.confirm-actions .cta:disabled { opacity: 0.55; cursor: default; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  z-index: 40; max-width: min(92vw, 560px);
+  padding: 12px 20px; border-radius: 999px;
+  font-weight: 600; font-size: 0.98rem; color: var(--text); text-align: center;
+}
+.toast.error { color: var(--danger-text); border-color: rgba(255, 158, 147, 0.5); }
+
+@media (max-width: 600px) {
+  .last-updated { display: none; }
+}

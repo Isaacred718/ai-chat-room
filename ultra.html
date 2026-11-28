@@ -16,7 +16,7 @@
   <section id="login" class="login">
     <form id="login-form" class="glass">
       <h1>Ultra <span>Dashboard</span></h1>
-      <p class="login-sub">Phase 1 · Read-only · Sign in with your Chat Room account</p>
+      <p class="login-sub">Phase 2 · Live updates · Sign in with your Chat Room account</p>
       <input id="email" type="email" placeholder="Email" autocomplete="username" required>
       <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
       <button type="submit" class="cta">Sign in</button>
@@ -28,7 +28,7 @@
     <header class="room-head glass">
       <span class="brand-mark" aria-hidden="true"></span>
       <h1>Ultra <span>Dashboard</span></h1>
-      <span class="head-note">Phase 1 · Read-only</span>
+      <span class="live-wrap"><span id="live-dot" class="live-dot"></span><span class="live-text">Live</span><span id="last-updated" class="last-updated"></span></span>
       <a class="glass-btn head-link" href="index.html">Chat Room</a>
       <button id="refresh" type="button" class="glass-btn">Refresh</button>
       <button id="sign-out" type="button" class="glass-btn">Sign out</button>
@@ -41,7 +41,7 @@
           <h2 class="section-title">Needs Isaac</h2>
           <span id="needs-count" class="needs-count">0</span>
         </div>
-        <p class="panel-note">Read-only roll-up from live job data. Acting on these items comes in a later phase.</p>
+        <p class="panel-note">From live job data. Failed jobs can be retried or dismissed; stuck jobs can be re-run or marked cancelled. Every action asks for confirmation first, and only your click runs it.</p>
         <div id="needs-clear" class="all-clear">All clear — no failed or stuck jobs.</div>
         <div id="needs-list" class="job-list"></div>
       </section>
@@ -52,7 +52,7 @@
           <h2 class="section-title">Board</h2>
           <span id="board-total" class="panel-note"></span>
         </div>
-        <p class="panel-note">Real jobs from the Chat Room, grouped by status. Select a card for the full prompt and result. Read-only.</p>
+        <p class="panel-note">Real jobs from the Chat Room, grouped by status. Select a card for the full prompt and result. Updates live, no refresh needed.</p>
         <div id="board-columns" class="board-columns"></div>
       </section>
 
@@ -88,6 +88,20 @@
       <p id="status" class="status"></p>
     </main>
   </div>
+
+  <dialog id="confirm" class="detail glass">
+    <div class="detail-head">
+      <h2 id="c-title">Confirm</h2>
+    </div>
+    <p id="c-body" class="confirm-body"></p>
+    <p id="c-error" class="error confirm-error"></p>
+    <div class="confirm-actions">
+      <button id="c-cancel" type="button" class="glass-btn">Cancel</button>
+      <button id="c-ok" type="button" class="cta">Confirm</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast glass" role="status" hidden></div>
 
   <dialog id="detail" class="detail glass">
     <div class="detail-head">

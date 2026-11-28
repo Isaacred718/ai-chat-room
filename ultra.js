@@ -1,6 +1,9 @@
-// Ultra Dashboard Phase 1 frontend. No build step.
-// READ-ONLY: this file performs Supabase selects/reads and auth only.
-// It never inserts, updates, deletes, upserts, or calls RPC writes,
+// Ultra Dashboard Phase 2 frontend. No build step.
+// Reads: Supabase selects + realtime subscriptions + auth.
+// WRITE ALLOWLIST (Phase 2, Isaac-click + confirm only, nothing else):
+//   (a) jobs INSERT in retryJob() — Retry / Re-run, dispatch field shape.
+//   (b) jobs UPDATE of status to 'cancelled' in cancelJob() — one job id.
+// No other inserts/updates/deletes/upserts/RPC anywhere in this file,
 // and it writes nothing to Bot HQ or Muse Dash.
 (() => {
   const cfg = window.CHAT_CONFIG || {};
@@ -48,8 +51,36 @@
   const presence = new Map(); // machine -> row
   const counts = { messages: null, jobs: null, presence: null };
   let channel = null;
+  let lastUpdatedAt = null;
+  let countsTimer = null;
 
   function setStatus(text) { $("status").textContent = text || ""; }
+
+  // ---------- live freshness + toast ----------
+  function touchUpdated() {
+    lastUpdatedAt = new Date();
+    renderLiveLabel();
+  }
+  function renderLiveLabel() {
+    const el = $("last-updated");
+    if (el) {
+      el.textContent = lastUpdatedAt
+        ? "updated " + lastUpdatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+        : "";
+    }
+    const dot = $("live-dot");
+    if (dot) dot.classList.toggle("on", !!channel);
+  }
+  let toastTimer = null;
+  function showToast(text, isError) {
+    const t = $("toast");
+    if (!t) return;
+    t.textContent = text;
+    t.classList.toggle("error", !!isError);
+    t.hidden = false;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 6000); // UI only; never writes
+  }
 
   // ---------- auth gate (same approach as the Chat Room) ----------
   function showApp(signedIn) {
@@ -103,6 +134,18 @@
     counts.messages = cm.error ? null : cm.count;
     counts.jobs = cj.error ? null : cj.count;
     counts.presence = cp.error ? null : cp.count;
+    touchUpdated();
+  }
+
+  async function refreshCounts() {
+    const [cm, cj, cp] = await Promise.all([
+      sb.from("messages").select("*", { count: "exact", head: true }),
+      sb.from("jobs").select("*", { count: "exact", head: true }),
+      sb.from("presence").select("*", { count: "exact", head: true }),
+    ]);
+    counts.messages = cm.error ? null : cm.count;
+    counts.jobs = cj.error ? null : cj.count;
+    counts.presence = cp.error ? null : cp.count;
   }
 
   function subscribe() {
@@ -111,12 +154,20 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, (payload) => {
         if (payload.eventType === "DELETE") jobs.delete(payload.old.id);
         else jobs.set(payload.new.id, payload.new);
+        touchUpdated();
         renderAll();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "presence" }, (payload) => {
         if (payload.eventType === "DELETE") presence.delete(payload.old.machine);
         else presence.set(payload.new.machine, payload.new);
+        touchUpdated();
         renderAll();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => {
+        // Messages feed only the adapter counts; refresh them (debounced, reads only).
+        touchUpdated();
+        if (countsTimer) clearTimeout(countsTimer);
+        countsTimer = setTimeout(async () => { await refreshCounts(); renderAdapters(); }, 800);
       })
       .subscribe();
   }
@@ -211,12 +262,121 @@
       b.className = "msg-body " + (it.kind === "failed" ? "err-text" : "dim");
       b.textContent = it.kind === "failed" ? snippet(it.text, 300) : it.text;
       card.append(b);
+      card.append(buildNeedsActions(it));
       const tag = document.createElement("span");
       tag.className = "badge " + (it.kind === "failed" ? "job-failed" : "job-running");
       tag.textContent = it.kind === "failed" ? "failed" : "stuck";
       card.querySelector(".msg-head").append(tag);
       return card;
     }));
+  }
+
+  // ---------- Needs Isaac actions (Phase 2) ----------
+  // The ONLY writes in this file live in retryJob() and cancelJob() below.
+  // They run exclusively from the confirm dialog's confirm button, which is
+  // only reachable from Isaac's click on a Needs Isaac action button.
+  function displayMachine(job) {
+    if (job.target_machine) return job.target_machine;
+    if (job.route_mode === "mac") return "idw-m1-mac";
+    if (job.route_mode === "idw-2") return "idw-2";
+    const p = PARTICIPANTS.find((x) => x.lane === job.lane);
+    return p ? p.machine : "router decides";
+  }
+
+  async function retryJob(job) {
+    const p = PARTICIPANTS.find((x) => x.lane === job.lane);
+    // Same field shape as app.js queueJob()'s jobs insert. Two honest notes:
+    // target_machine is carried via route_mode (the bridge sets target_machine
+    // itself after routing), and placeholder_message_id is omitted because the
+    // Phase 2 allowlist covers only this jobs insert — the bridge treats a
+    // missing placeholder as "insert a fresh result message" (listener.mjs).
+    const row = {
+      id: crypto.randomUUID(),
+      kind: job.kind || "dispatch",
+      lane: job.lane,
+      agent: job.agent || (p ? p.name : job.lane),
+      prompt: job.prompt,
+      classification: job.classification || "auto",
+      route_mode: job.target_machine === "idw-m1-mac" ? "mac"
+        : job.target_machine === "idw-2" ? "idw-2"
+        : (job.route_mode || "auto"),
+    };
+    const { error } = await sb.from("jobs").insert(row);
+    if (error) throw error;
+  }
+
+  async function cancelJob(job) {
+    const { error } = await sb.from("jobs").update({ status: "cancelled" }).eq("id", job.id);
+    if (error) throw error;
+  }
+
+  let pendingConfirm = null; // { run, doneText } — set only by an action-button click
+  function openConfirm(opts) {
+    pendingConfirm = opts;
+    $("c-title").textContent = opts.title;
+    $("c-body").textContent = opts.body;
+    $("c-error").textContent = "";
+    const ok = $("c-ok");
+    ok.textContent = opts.confirmLabel;
+    ok.disabled = false;
+    ok.classList.toggle("danger", !!opts.danger);
+    const d = $("confirm");
+    if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
+  }
+  function closeConfirm() {
+    pendingConfirm = null;
+    const d = $("confirm");
+    if (typeof d.close === "function") d.close(); else d.removeAttribute("open");
+  }
+
+  function confirmRetry(job, isStuck) {
+    const who = agentName(job) + " @ " + displayMachine(job);
+    openConfirm({
+      title: isStuck ? "Re-run stuck job" : "Retry failed job",
+      body: "Queue a new job with the same prompt and lane?\n" + who +
+        "\n\nPrompt: " + snippet(job.prompt, 240),
+      confirmLabel: isStuck ? "Re-run" : "Retry",
+      run: () => retryJob(job),
+      doneText: "Retry queued for " + who,
+    });
+  }
+  function confirmCancel(job, isStuck) {
+    openConfirm({
+      title: isStuck ? "Mark job cancelled" : "Dismiss failed job",
+      body: isStuck
+        ? "Mark this running job as cancelled? This only updates the board. A lane already running may still finish and post its result."
+        : "Dismiss this failed job? It will be marked cancelled and leave Needs Isaac. Nothing else about the job changes.",
+      confirmLabel: isStuck ? "Mark cancelled" : "Dismiss",
+      danger: true,
+      run: () => cancelJob(job),
+      doneText: (isStuck ? "Marked cancelled: " : "Dismissed: ") + agentName(job) + " @ " + displayMachine(job),
+    });
+  }
+
+  function buildNeedsActions(it) {
+    const row = document.createElement("div");
+    row.className = "needs-actions";
+    const mk = (label, danger, handler) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "action-btn" + (danger ? " danger" : "");
+      btn.textContent = label;
+      btn.addEventListener("click", (e) => { e.stopPropagation(); handler(); });
+      return btn;
+    };
+    const job = it.job;
+    if (it.kind === "failed") {
+      row.append(
+        mk("Retry", false, () => confirmRetry(job, false)),
+        mk("Dismiss", true, () => confirmCancel(job, false)),
+      );
+    } else {
+      row.append(
+        mk("Re-run", false, () => confirmRetry(job, true)),
+        mk("Mark cancelled", true, () => confirmCancel(job, true)),
+      );
+    }
+    return row;
   }
 
   // ---------- Board ----------
@@ -352,8 +512,32 @@
     if (typeof d.close === "function") d.close(); else d.removeAttribute("open");
   });
 
+  $("c-cancel").addEventListener("click", () => closeConfirm());
+  $("c-ok").addEventListener("click", async () => {
+    if (!pendingConfirm) return;
+    const action = pendingConfirm;
+    const ok = $("c-ok");
+    ok.disabled = true;
+    ok.textContent = "Working...";
+    $("c-error").textContent = "";
+    try {
+      await action.run();
+      const doneText = action.doneText;
+      closeConfirm();
+      showToast(doneText);
+      await loadAll();
+      renderAll();
+    } catch (err) {
+      // Show the real error in place; never swallow it silently.
+      $("c-error").textContent = "Action failed: " + (err && err.message ? err.message : String(err));
+      ok.disabled = false;
+      ok.textContent = action.confirmLabel;
+    }
+  });
+
   function renderAll() {
     if ($("app").hidden) return;
+    renderLiveLabel();
     renderNeeds();
     renderBoard();
     renderFleet();

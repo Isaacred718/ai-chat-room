@@ -20,6 +20,62 @@
   ];
   const PRESENCE_FRESH_MS = 3 * 60 * 1000;
 
+  // Per-participant colors: avatar, name, and message tint all key off these.
+  const AGENT_COLORS = {
+    "Isaac": "#8cf23a", "Muse": "#b388ff", "Claude Duet": "#ff9e64",
+    "Codex": "#f778ba", "OpenCode": "#2dd4bf", "Grok": "#d7dae0",
+    "Hermes": "#ffd166", "Meta AI": "#4da3ff", "System": "#8a978c",
+  };
+  function colorFor(name) { return AGENT_COLORS[name] || "#8a978c"; }
+  function initialsOf(name) {
+    return (name || "?").split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+  }
+  function makeAvatar(who) {
+    const a = document.createElement("span");
+    a.className = "avatar"; a.textContent = initialsOf(who);
+    return a;
+  }
+  // Safe rich text: builds DOM from text nodes only (agent output is never
+  // parsed as HTML), adding **bold**, *italic*, `code`, bullets, and headers.
+  function appendInline(parent, text) {
+    const re = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g;
+    let last = 0; let m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) parent.append(document.createTextNode(text.slice(last, m.index)));
+      const tok = m[0];
+      if (tok.startsWith("**")) { const n = document.createElement("strong"); n.textContent = tok.slice(2, -2); parent.append(n); }
+      else if (tok.startsWith("`")) { const n = document.createElement("code"); n.textContent = tok.slice(1, -1); parent.append(n); }
+      else { const n = document.createElement("em"); n.textContent = tok.slice(1, -1); parent.append(n); }
+      last = m.index + tok.length;
+    }
+    if (last < text.length) parent.append(document.createTextNode(text.slice(last)));
+  }
+  function renderRich(el, text) {
+    let list = null;
+    for (const raw of String(text || "").split("\n")) {
+      const line = raw.replace(/\s+$/, "");
+      const bullet = line.match(/^\s*(?:[-\u2022*]|\d+[.)])\s+(.*)$/);
+      if (bullet) {
+        if (!list) { list = document.createElement("div"); list.className = "rich-list"; el.append(list); }
+        const item = document.createElement("div"); item.className = "rich-item";
+        const mark = document.createElement("span"); mark.className = "rich-mark";
+        const t = line.trimStart();
+        mark.textContent = /^\d/.test(t) ? t.split(/\s/)[0] : "\u2022";
+        const span = document.createElement("span");
+        appendInline(span, bullet[1]);
+        item.append(mark, span); list.append(item);
+        continue;
+      }
+      list = null;
+      if (!line.trim()) { const gap = document.createElement("div"); gap.className = "rich-gap"; el.append(gap); continue; }
+      const p = document.createElement("div"); p.className = "rich-line";
+      const h = line.match(/^#{1,6}\s+(.*)$/);
+      if (h) { p.classList.add("rich-h"); appendInline(p, h[1]); }
+      else appendInline(p, line);
+      el.append(p);
+    }
+  }
+
   if (!window.supabase || !cfg.SUPABASE_URL) {
     document.body.textContent = "Missing supabase-js or config.js";
     return;
@@ -140,8 +196,11 @@
   function buildMsgEl(r) {
     const el = document.createElement("div");
     el.className = "msg";
+    const who = r.kind === "user" ? (r.sender || "Isaac") : (r.agent || r.sender || "System");
+    el.style.setProperty("--agent", colorFor(who));
     const head = document.createElement("div");
     head.className = "msg-head";
+    head.append(makeAvatar(who));
     const add = (cls, text) => {
       if (!text) return;
       const s = document.createElement("span");
@@ -153,8 +212,8 @@
     add("machine", r.machine && "@ " + r.machine);
     add("time", fmtTime(r.created_at));
     const body = document.createElement("div");
-    body.className = "msg-body";
-    body.textContent = r.content || ""; // textContent: never interpret agent output as HTML
+    body.className = "msg-body rich";
+    renderRich(body, r.content || ""); // DOM built from text nodes only: agent output is never parsed as HTML
     el.append(head, body);
     return el;
   }
@@ -168,6 +227,7 @@
   function buildJobEl(job, compact) {
     const el = document.createElement("div");
     el.className = "job-card";
+    el.style.setProperty("--agent", colorFor(job.agent || "System"));
     const head = document.createElement("div");
     head.className = "msg-head";
     const add = (cls, text) => {
@@ -175,6 +235,7 @@
       const s = document.createElement("span");
       s.className = cls; s.textContent = text; head.append(s);
     };
+    head.append(makeAvatar(job.agent || "System"));
     add("sender", job.agent || job.lane || "job");
     add("badge job-" + job.status, job.status);
     add("machine", job.target_machine && "@ " + job.target_machine);
@@ -189,8 +250,8 @@
     const bodyText = job.status === "failed" ? job.error : job.result;
     if (bodyText) {
       const b = document.createElement("div");
-      b.className = "msg-body";
-      b.textContent = compact ? snippet(bodyText, 220) : bodyText;
+      if (compact) { b.className = "msg-body"; b.textContent = snippet(bodyText, 220); }
+      else { b.className = "msg-body rich"; renderRich(b, bodyText); }
       el.append(b);
     } else if (job.status === "pending" || job.status === "running") {
       const b = document.createElement("div");
@@ -241,7 +302,7 @@
       const label = document.createElement("span");
       label.className = "row-main";
       const name = document.createElement("span");
-      name.className = "row-name"; name.textContent = p.name;
+      name.className = "row-name"; name.textContent = p.name; name.style.color = colorFor(p.name);
       const sub = document.createElement("small");
       sub.textContent = p.role + (p.machine ? " · " + (isOnline(p.machine) ? "online" : "offline") : "");
       label.append(name, sub);
@@ -265,7 +326,7 @@
       const main = document.createElement("span");
       main.className = "row-main";
       const name = document.createElement("span");
-      name.className = "row-name"; name.textContent = p.name;
+      name.className = "row-name"; name.textContent = p.name; name.style.color = colorFor(p.name);
       const sub = document.createElement("small");
       sub.textContent = last ? snippet(last.content, 60) : p.role;
       main.append(name, sub);
@@ -285,6 +346,7 @@
     const p = PARTICIPANTS.find((x) => dmKey(x) === dmLane);
     if (!p) return;
     $("dm-title").textContent = p.name;
+    $("dm-title").style.color = colorFor(p.name);
     $("dm-presence").textContent = p.lane === null ? "simulated only" : isOnline(p.machine) ? "online" : "offline";
     fillThread($("dm-messages"), dmRows(p));
   }

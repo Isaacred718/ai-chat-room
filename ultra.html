@@ -16,7 +16,7 @@
   <section id="login" class="login">
     <form id="login-form" class="glass">
       <h1>Ultra <span>Dashboard</span></h1>
-      <p class="login-sub">Phase 4 · Fleet rail · Sign in with your Chat Room account</p>
+      <p class="login-sub">Phase 5 · Capability Finder · Sign in with your Chat Room account</p>
       <input id="email" type="email" placeholder="Email" autocomplete="username" required>
       <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
       <button type="submit" class="cta">Sign in</button>
@@ -45,6 +45,11 @@
         <p class="panel-note">From live job data. Failed jobs can be retried or dismissed; stuck jobs can be re-run or marked cancelled. Every action asks for confirmation first, and only your click runs it.</p>
         <div id="needs-clear" class="all-clear">All clear — no failed or stuck jobs.</div>
         <div id="needs-list" class="job-list"></div>
+        <div id="needs-proposals-wrap" hidden>
+          <h3 class="sub-title">Skill proposals</h3>
+          <p class="panel-note">Proposals live on this device.</p>
+          <div id="needs-proposals" class="job-list"></div>
+        </div>
       </section>
 
       <!-- BOARD -->
@@ -131,6 +136,7 @@
     </div>
     <div class="detail-actions">
       <button id="d-followup-btn" type="button" class="action-btn">Dispatch follow-up</button>
+      <button id="d-finder-btn" type="button" class="action-btn" hidden>Find a skill</button>
     </div>
   </dialog>
 
@@ -169,6 +175,33 @@
       <button id="x-cancel" type="button" class="glass-btn">Cancel</button>
       <button id="x-submit" type="button" class="cta">Queue job…</button>
     </div>
+  </dialog>
+
+  <dialog id="finder" class="detail glass">
+    <div class="detail-head">
+      <h2>Find a skill</h2>
+      <button id="f-close" type="button" class="glass-btn">Close</button>
+    </div>
+    <p id="f-context" class="confirm-body"></p>
+    <div class="dispatch-form">
+      <label class="x-label">Task
+        <textarea id="f-task" rows="4"></textarea>
+      </label>
+    </div>
+    <p class="finder-note">Skills are third-party code. A proposal is not an install; approving one queues an install job that must inspect the skill first and stop if anything looks unsafe.</p>
+    <div class="confirm-actions finder-actions">
+      <a id="f-search-link" class="cta finder-search" href="https://www.skills.sh/" target="_blank" rel="noopener">Search on skills.sh</a>
+    </div>
+    <div class="dispatch-form">
+      <label class="x-label">Paste a candidate (skills.sh URL or owner/repo@skill)
+        <input id="f-paste" type="text" placeholder="https://www.skills.sh/owner/repo/skill or owner/repo@skill">
+      </label>
+    </div>
+    <p id="f-error" class="error confirm-error"></p>
+    <div class="confirm-actions">
+      <button id="f-add" type="button" class="cta">Add candidate</button>
+    </div>
+    <div id="f-candidates" class="job-list"></div>
   </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

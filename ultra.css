@@ -410,3 +410,18 @@ input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px var(--lime-tint);
 @media (max-width: 600px) {
   .rail { left: 14px; width: auto; }
 }
+
+/* ---------- Phase 5: Capability Finder + skill proposals ---------- */
+#needs-proposals-wrap { margin-top: 18px; }
+#needs-proposals-wrap .sub-title { margin-bottom: 4px; }
+.dispatch-form input[type="text"] {
+  width: 100%; background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--r-md); padding: 10px 16px; min-height: 48px;
+  font: inherit; color: var(--text);
+}
+.dispatch-form input[type="text"]:focus { border-color: var(--lime); box-shadow: 0 0 0 3px var(--lime-tint); outline: none; }
+.finder-note { color: var(--text-2); font-size: 0.95rem; margin: 14px 0 0; }
+.finder-actions { justify-content: flex-start; }
+a.cta.finder-search { text-decoration: none; display: inline-flex; align-items: center; }
+#f-candidates { margin-top: 14px; }
+.proposal-link { color: var(--lime); font-size: 0.9rem; font-weight: 600; display: inline-block; margin-top: 8px; }

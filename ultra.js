@@ -1,13 +1,20 @@
-// Ultra Dashboard Phase 4 frontend. No build step.
+// Ultra Dashboard Phase 5 frontend. No build step.
 // Reads: Supabase selects + realtime subscriptions + auth.
-// WRITE ALLOWLIST (Phase 4 — unchanged since Phase 3, Isaac-click +
-// confirm only, nothing else):
+// WRITE ALLOWLIST (Phases 2-5 — Isaac-click + confirm only, nothing
+// else):
 //   (a) jobs INSERT via insertJob() — the one shared code path for
-//       Retry / Re-run AND Dispatch (global + follow-up), dispatch shape.
+//       Retry / Re-run, Dispatch (global + follow-up), AND the
+//       Capability Finder approval job (Phase 5), dispatch shape.
 //   (b) jobs UPDATE of status to 'cancelled' in cancelJob() — one job id.
 // No other inserts/updates/deletes/upserts/RPC anywhere in this file,
-// and it writes nothing to Bot HQ or Muse Dash. The only localStorage
-// key it writes is 'ultra-followups-v1' (on-device follow-up links).
+// and it writes nothing to Bot HQ or Muse Dash. localStorage keys:
+// 'ultra-followups-v1' (on-device follow-up links) and
+// 'ultra-skill-proposals-v1' (Phase 5, on-device skill proposals).
+// fetch(): NONE anywhere in this file. skills.sh's JSON search API
+// sends no Access-Control-Allow-Origin header (verified 2026-11-28,
+// GET + OPTIONS preflight), so a browser fetch from this origin is
+// blocked by CORS and the Capability Finder ships its fallback branch:
+// it links out to skills.sh search and takes pasted candidates.
 (() => {
   const cfg = window.CHAT_CONFIG || {};
   const $ = (id) => document.getElementById(id);
@@ -108,6 +115,46 @@
     try { localStorage.setItem(FOLLOWUPS_KEY, JSON.stringify(m)); }
     catch { /* storage unavailable: the link simply is not kept */ }
   }
+  // ---------- Skill proposals (Phase 5, on-device only) ----------
+  // Capability Finder proposals live on this device only, under
+  // 'ultra-skill-proposals-v1'. Dismissing a proposal is a local-only
+  // change (no server write). The one server effect a proposal can
+  // have is the Approve path further below, which queues exactly ONE
+  // job through insertJob() after Isaac's confirm click.
+  const PROPOSALS_KEY = "ultra-skill-proposals-v1";
+  const NOT_CHECKED = "Not checked — review required";
+  function loadProposals() {
+    try {
+      const v = JSON.parse(localStorage.getItem(PROPOSALS_KEY));
+      return Array.isArray(v) ? v : [];
+    } catch { return []; }
+  }
+  function saveProposals(list) {
+    try { localStorage.setItem(PROPOSALS_KEY, JSON.stringify(list)); }
+    catch { /* storage unavailable: proposals simply are not kept */ }
+  }
+  function addProposal(prop) {
+    const list = loadProposals();
+    list.unshift(prop);
+    saveProposals(list);
+  }
+  function dismissProposal(id) {
+    saveProposals(loadProposals().filter((x) => x.id !== id));
+    renderAll();
+  }
+  function setProposalState(id, state) {
+    const list = loadProposals();
+    const prop = list.find((x) => x.id === id);
+    if (prop) { prop.state = state; saveProposals(list); }
+  }
+  function proposalMachine(prop) {
+    // The failed job's machine when it is known, else idw-2.
+    const job = prop.jobId ? jobs.get(prop.jobId) : null;
+    if (!job) return "idw-2";
+    const m = displayMachine(job);
+    return (m === "idw-m1-mac" || m === "idw-2") ? m : "idw-2";
+  }
+
   function parentOf(id) { return loadFollowups()[id] || null; }
   function childrenOf(id) {
     const m = loadFollowups();
@@ -414,6 +461,7 @@
       row.append(
         mk("Retry", false, () => confirmRetry(job, false)),
         mk("Dismiss", true, () => confirmCancel(job, false)),
+        mk("Find a skill", false, () => openFinder(job)),
       );
     } else {
       row.append(
@@ -797,6 +845,7 @@
     $("d-prompt").textContent = job.prompt || "(no prompt recorded)";
     $("d-result").textContent = job.result || "(no result yet)";
     $("d-error").textContent = job.error || "(no error)";
+    $("d-finder-btn").hidden = job.status !== "failed";
     renderDetailLinks(job);
     const d = $("detail");
     if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
@@ -924,10 +973,245 @@
     });
   });
 
+  // ---------- Skill proposals in Needs Isaac (Phase 5) ----------
+  function renderProposals() {
+    const wrap = $("needs-proposals-wrap");
+    if (!wrap) return;
+    const list = loadProposals();
+    wrap.hidden = list.length === 0;
+    $("needs-proposals").replaceChildren(...list.map((prop) => {
+      const card = document.createElement("article");
+      card.className = "job-card proposal-card";
+      const head = document.createElement("div");
+      head.className = "msg-head";
+      const nm = document.createElement("span");
+      nm.className = "sender";
+      nm.textContent = prop.name;
+      const tag = document.createElement("span");
+      tag.className = "badge " + (prop.state === "install-queued" ? "job-done" : "badge-pending");
+      tag.textContent = prop.state === "install-queued" ? "Install queued" : "Proposal";
+      head.append(nm, tag);
+      card.append(head);
+      const src = document.createElement("div");
+      src.className = "card-meta";
+      src.textContent = prop.sourceId;
+      card.append(src);
+      if (prop.description) {
+        const d = document.createElement("div");
+        d.className = "msg-body";
+        d.textContent = prop.description;
+        card.append(d);
+      }
+      if (prop.installs !== null && prop.installs !== undefined) {
+        const ins = document.createElement("div");
+        ins.className = "card-meta";
+        ins.textContent = prop.installs + " installs";
+        card.append(ins);
+      }
+      const sec = document.createElement("div");
+      sec.className = "msg-body dim";
+      sec.textContent = "Security status: " + prop.securityStatus;
+      card.append(sec);
+      if (prop.taskText) {
+        const t = document.createElement("div");
+        t.className = "card-meta";
+        t.textContent = "For: " + snippet(prop.taskText, 140);
+        card.append(t);
+      }
+      const link = document.createElement("a");
+      link.className = "proposal-link";
+      link.href = prop.url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "View on skills.sh";
+      card.append(link);
+      const row = document.createElement("div");
+      row.className = "needs-actions";
+      if (prop.state !== "install-queued") {
+        const ap = document.createElement("button");
+        ap.type = "button";
+        ap.className = "action-btn";
+        ap.textContent = "Approve install";
+        ap.addEventListener("click", (e) => { e.stopPropagation(); confirmApproveProposal(prop); });
+        row.append(ap);
+      }
+      const dis = document.createElement("button");
+      dis.type = "button";
+      dis.className = "action-btn danger";
+      dis.textContent = "Dismiss";
+      dis.addEventListener("click", (e) => { e.stopPropagation(); dismissProposal(prop.id); });
+      row.append(dis);
+      card.append(row);
+      return card;
+    }));
+  }
+
+  function confirmApproveProposal(prop) {
+    const machine = proposalMachine(prop);
+    const prompt = "Install request approved by Isaac from the Ultra Capability Finder. Skill: [" + prop.sourceId + "] — [" + prop.url + "]. Target machine: [" + machine + "]. Steps: (1) Inspect the skill's files and any published security audit first. (2) If anything looks unsafe, unclear, or not genuinely relevant to the task below, STOP and report instead of installing. (3) Only if it checks out, install it for the agent setup on this machine using the standard skills tooling, then verify it is recognized/listed and report what was installed and where. Task this skill is for: [" + prop.taskText + "]";
+    openConfirm({
+      title: "Approve skill install",
+      body: "Queue an install job for this skill?\n" + prop.name +
+        "\nSource: " + prop.sourceId +
+        "\n" + prop.url +
+        "\nSecurity status: " + prop.securityStatus +
+        "\nTarget machine: " + machine +
+        "\n\nThe job tells the lane to inspect the skill first and stop if anything looks unsafe.",
+      confirmLabel: "Queue install job",
+      run: async () => {
+        await insertJob({
+          id: crypto.randomUUID(),
+          kind: "dispatch",
+          lane: "muse",
+          agent: "Muse",
+          prompt,
+          classification: "auto",
+          route_mode: machine === "idw-m1-mac" ? "mac" : "idw-2",
+        });
+        setProposalState(prop.id, "install-queued");
+      },
+      doneText: "Install job queued for " + prop.name + " @ " + machine,
+    });
+  }
+
+  // ---------- Capability Finder (Phase 5, fallback branch) ----------
+  // skills.sh data is UNTRUSTED: candidate text is rendered only via
+  // text nodes, and nothing from a listing is ever run, fetched, or
+  // followed from this page. The search itself happens on skills.sh
+  // (external link, new tab, opened only by Isaac's click); a pasted
+  // candidate's fields are derived from the identifier alone, and its
+  // security status is always NOT_CHECKED — the source provides no
+  // audit verdict in this flow, so none is claimed.
+  let finderJob = null;
+
+  function finderSearchUrl() {
+    return "https://www.skills.sh/search?q=" + encodeURIComponent($("f-task").value.trim());
+  }
+  function openFinder(job) {
+    finderJob = job;
+    $("f-context").textContent = "For the failed job: " + agentName(job) + " · " + snippet(job.prompt, 160);
+    $("f-task").value = job.prompt || "";
+    $("f-paste").value = "";
+    $("f-error").textContent = "";
+    $("f-candidates").replaceChildren();
+    $("f-search-link").href = finderSearchUrl();
+    const d = $("finder");
+    if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
+  }
+  function closeFinder() {
+    const d = $("finder");
+    if (typeof d.close === "function") d.close(); else d.removeAttribute("open");
+  }
+
+  function parseCandidate(raw) {
+    const text = (raw || "").trim();
+    if (!text) return null;
+    let owner = null, repo = null, skill = null;
+    if (/^https?:\/\//i.test(text)) {
+      let u;
+      try { u = new URL(text); } catch { return null; }
+      const parts = u.pathname.split("/").filter(Boolean);
+      if (parts.length < 3) return null;
+      [owner, repo, skill] = parts.slice(0, 3);
+    } else {
+      const at = text.lastIndexOf("@");
+      if (at < 1) return null;
+      const left = text.slice(0, at).split("/").filter(Boolean);
+      skill = text.slice(at + 1).trim();
+      if (left.length !== 2 || !skill) return null;
+      [owner, repo] = left;
+    }
+    if (!owner || !repo || !skill) return null;
+    return {
+      name: skill,
+      sourceId: owner + "/" + repo + "@" + skill,
+      url: "https://www.skills.sh/" + owner + "/" + repo + "/" + skill,
+      description: null,
+      installs: null,
+      securityStatus: NOT_CHECKED,
+    };
+  }
+
+  function renderCandidate(cand) {
+    const card = document.createElement("article");
+    card.className = "job-card candidate-card";
+    const head = document.createElement("div");
+    head.className = "msg-head";
+    const nm = document.createElement("span");
+    nm.className = "sender";
+    nm.textContent = cand.name;
+    head.append(nm);
+    card.append(head);
+    const src = document.createElement("div");
+    src.className = "card-meta";
+    src.textContent = cand.sourceId;
+    card.append(src);
+    const sec = document.createElement("div");
+    sec.className = "msg-body dim";
+    sec.textContent = "Security status: " + cand.securityStatus;
+    card.append(sec);
+    const link = document.createElement("a");
+    link.className = "proposal-link";
+    link.href = cand.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "View on skills.sh";
+    card.append(link);
+    const row = document.createElement("div");
+    row.className = "needs-actions";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "action-btn";
+    btn.textContent = "Propose";
+    btn.addEventListener("click", () => {
+      addProposal({
+        id: crypto.randomUUID(),
+        name: cand.name,
+        sourceId: cand.sourceId,
+        url: cand.url,
+        description: cand.description,
+        installs: cand.installs,
+        securityStatus: cand.securityStatus,
+        taskText: $("f-task").value.trim(),
+        jobId: finderJob ? finderJob.id : null,
+        createdAt: new Date().toISOString(),
+        state: "proposed",
+      });
+      btn.disabled = true;
+      btn.textContent = "Proposed";
+      showToast("Proposed: " + cand.name);
+      renderAll();
+    });
+    row.append(btn);
+    card.append(row);
+    return card;
+  }
+
+  $("f-task").addEventListener("input", () => { $("f-search-link").href = finderSearchUrl(); });
+  $("f-close").addEventListener("click", () => { finderJob = null; closeFinder(); });
+  $("f-add").addEventListener("click", () => {
+    const cand = parseCandidate($("f-paste").value);
+    if (!cand) {
+      $("f-error").textContent = "Could not read that as a skills.sh URL or an owner/repo@skill identifier.";
+      return;
+    }
+    $("f-error").textContent = "";
+    $("f-paste").value = "";
+    $("f-candidates").append(renderCandidate(cand));
+  });
+  $("d-finder-btn").addEventListener("click", () => {
+    if (!detailJob || detailJob.status !== "failed") return;
+    const job = detailJob;
+    const d = $("detail");
+    if (typeof d.close === "function") d.close(); else d.removeAttribute("open");
+    openFinder(job);
+  });
+
   function renderAll() {
     if ($("app").hidden) return;
     renderLiveLabel();
     renderNeeds();
+    renderProposals();
     renderBoard();
     renderFleet();
     renderRail();

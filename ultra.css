@@ -349,3 +349,31 @@ input:focus { border-color: var(--lime); box-shadow: 0 0 0 3px var(--lime-tint);
 @media (max-width: 600px) {
   .last-updated { display: none; }
 }
+
+/* ---------- Phase 3: dispatch form + detail follow-ups ---------- */
+.detail-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+#d-links { white-space: pre-wrap; }
+
+.dispatch-form { display: grid; gap: 12px; margin-top: 14px; }
+.x-label { display: grid; gap: 4px; color: var(--text-3); font-size: 0.85rem; font-weight: 600; }
+.dispatch-form textarea {
+  width: 100%; background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--r-md); padding: 10px 16px; min-height: 96px;
+  font: inherit; color: var(--text); resize: vertical;
+}
+.dispatch-form textarea:focus { border-color: var(--lime); box-shadow: 0 0 0 3px var(--lime-tint); outline: none; }
+.dispatch-fields { display: flex; gap: 10px; flex-wrap: wrap; }
+.dispatch-fields label {
+  display: grid; gap: 4px; flex: 1; min-width: 118px;
+  color: var(--text-3); font-size: 0.85rem; font-weight: 600;
+}
+.dispatch-fields select {
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--r-md); padding: 10px 12px; min-height: 48px;
+  font: inherit; color: var(--text);
+}
+.dispatch-fields select:focus { border-color: var(--lime); box-shadow: 0 0 0 3px var(--lime-tint); outline: none; }
+.x-target-line { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-3); font-size: 0.9rem; font-weight: 600; }
+.x-agent-chip { display: inline-flex; align-items: center; gap: 8px; }
+.x-agent-name { font-family: var(--font-display); font-weight: 700; font-size: 1.12rem; letter-spacing: 0.02em; }
+#x-parent-note { margin-top: 12px; }

@@ -1,10 +1,12 @@
-// Ultra Dashboard Phase 2 frontend. No build step.
+// Ultra Dashboard Phase 3 frontend. No build step.
 // Reads: Supabase selects + realtime subscriptions + auth.
-// WRITE ALLOWLIST (Phase 2, Isaac-click + confirm only, nothing else):
-//   (a) jobs INSERT in retryJob() — Retry / Re-run, dispatch field shape.
+// WRITE ALLOWLIST (Phase 3, Isaac-click + confirm only, nothing else):
+//   (a) jobs INSERT via insertJob() — the one shared code path for
+//       Retry / Re-run AND Dispatch (global + follow-up), dispatch shape.
 //   (b) jobs UPDATE of status to 'cancelled' in cancelJob() — one job id.
 // No other inserts/updates/deletes/upserts/RPC anywhere in this file,
-// and it writes nothing to Bot HQ or Muse Dash.
+// and it writes nothing to Bot HQ or Muse Dash. The only localStorage
+// key it writes is 'ultra-followups-v1' (on-device follow-up links).
 (() => {
   const cfg = window.CHAT_CONFIG || {};
   const $ = (id) => document.getElementById(id);
@@ -80,6 +82,28 @@
     t.hidden = false;
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { t.hidden = true; }, 6000); // UI only; never writes
+  }
+
+  // ---------- follow-up links (on-device only) ----------
+  // The jobs table has no parent/link column (schema changes are out of
+  // scope), so a follow-up dispatched from this page records its link
+  // here, on this device only: new job id -> parent job id. The link
+  // lives on the device that dispatched it until a schema field exists.
+  const FOLLOWUPS_KEY = "ultra-followups-v1";
+  function loadFollowups() {
+    try { return JSON.parse(localStorage.getItem(FOLLOWUPS_KEY)) || {}; }
+    catch { return {}; }
+  }
+  function recordFollowup(childId, parentId) {
+    const m = loadFollowups();
+    m[childId] = parentId;
+    try { localStorage.setItem(FOLLOWUPS_KEY, JSON.stringify(m)); }
+    catch { /* storage unavailable: the link simply is not kept */ }
+  }
+  function parentOf(id) { return loadFollowups()[id] || null; }
+  function childrenOf(id) {
+    const m = loadFollowups();
+    return Object.keys(m).filter((k) => m[k] === id);
   }
 
   // ---------- auth gate (same approach as the Chat Room) ----------
@@ -271,10 +295,11 @@
     }));
   }
 
-  // ---------- Needs Isaac actions (Phase 2) ----------
-  // The ONLY writes in this file live in retryJob() and cancelJob() below.
-  // They run exclusively from the confirm dialog's confirm button, which is
-  // only reachable from Isaac's click on a Needs Isaac action button.
+  // ---------- Writes: insertJob() + cancelJob() (Phases 2-3) ----------
+  // The ONLY Supabase writes in this file live in insertJob() and
+  // cancelJob() below. They run exclusively from the confirm dialog's
+  // confirm button, reachable only from Isaac's click on a Needs Isaac
+  // action button or on the dispatch form's submit button.
   function displayMachine(job) {
     if (job.target_machine) return job.target_machine;
     if (job.route_mode === "mac") return "idw-m1-mac";
@@ -283,13 +308,28 @@
     return p ? p.machine : "router decides";
   }
 
+  function routeModeFor(job) {
+    // The bridge sets target_machine itself after routing, so a job's
+    // machine is carried via route_mode: an explicit target wins,
+    // otherwise the job's own route_mode is kept.
+    return job.target_machine === "idw-m1-mac" ? "mac"
+      : job.target_machine === "idw-2" ? "idw-2"
+      : (job.route_mode || "auto");
+  }
+
+  // The single shared jobs INSERT for Retry / Re-run AND Dispatch.
+  // Field shape matches app.js queueJob()'s jobs insert. One deliberate
+  // difference, forced by the jobs-only allowlist: placeholder_message_id
+  // is omitted — the bridge treats a missing placeholder as "insert a
+  // fresh result message" (listener.mjs writeMessage fall-through).
+  async function insertJob(row) {
+    const { error } = await sb.from("jobs").insert(row);
+    if (error) throw error;
+    return row.id;
+  }
+
   async function retryJob(job) {
     const p = PARTICIPANTS.find((x) => x.lane === job.lane);
-    // Same field shape as app.js queueJob()'s jobs insert. Two honest notes:
-    // target_machine is carried via route_mode (the bridge sets target_machine
-    // itself after routing), and placeholder_message_id is omitted because the
-    // Phase 2 allowlist covers only this jobs insert — the bridge treats a
-    // missing placeholder as "insert a fresh result message" (listener.mjs).
     const row = {
       id: crypto.randomUUID(),
       kind: job.kind || "dispatch",
@@ -297,12 +337,9 @@
       agent: job.agent || (p ? p.name : job.lane),
       prompt: job.prompt,
       classification: job.classification || "auto",
-      route_mode: job.target_machine === "idw-m1-mac" ? "mac"
-        : job.target_machine === "idw-2" ? "idw-2"
-        : (job.route_mode || "auto"),
+      route_mode: routeModeFor(job),
     };
-    const { error } = await sb.from("jobs").insert(row);
-    if (error) throw error;
+    await insertJob(row);
   }
 
   async function cancelJob(job) {
@@ -483,8 +520,33 @@
       : "Only signal available here: the Mac presence heartbeat — no heartbeat row was read.";
   }
 
-  // ---------- Detail (read-only) ----------
+  // ---------- Detail ----------
+  let detailJob = null;
+  function renderDetailLinks(job) {
+    const lines = [];
+    const pid = parentOf(job.id);
+    if (pid) {
+      const pj = jobs.get(pid);
+      lines.push("Follow-up to: " + (pj
+        ? agentName(pj) + " · " + snippet(pj.prompt, 120)
+        : "a job that is not in the current board load"));
+    }
+    const kids = childrenOf(job.id);
+    if (kids.length) {
+      lines.push("Follow-ups: " + kids.length);
+      kids.forEach((cid) => {
+        const cj = jobs.get(cid);
+        lines.push("· " + (cj
+          ? agentName(cj) + " · " + snippet(cj.prompt, 120)
+          : "a job that is not in the current board load"));
+      });
+    }
+    $("d-links-wrap").hidden = lines.length === 0;
+    $("d-links").textContent = lines.join("\n");
+  }
+
   function openDetail(job) {
+    detailJob = job;
     $("d-title").textContent = agentName(job) + " · " + job.status;
     const rows = [
       ["Agent", job.agent], ["Lane", job.lane], ["Status", job.status],
@@ -504,12 +566,17 @@
     $("d-prompt").textContent = job.prompt || "(no prompt recorded)";
     $("d-result").textContent = job.result || "(no result yet)";
     $("d-error").textContent = job.error || "(no error)";
+    renderDetailLinks(job);
     const d = $("detail");
     if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
   }
   $("d-close").addEventListener("click", () => {
     const d = $("detail");
     if (typeof d.close === "function") d.close(); else d.removeAttribute("open");
+  });
+  $("d-followup-btn").addEventListener("click", () => {
+    if (!detailJob) return;
+    openDispatch({ lane: detailJob.lane, route: routeModeFor(detailJob), parent: detailJob });
   });
 
   $("c-cancel").addEventListener("click", () => closeConfirm());
@@ -533,6 +600,97 @@
       ok.disabled = false;
       ok.textContent = action.confirmLabel;
     }
+  });
+
+  // ---------- Dispatch (Phase 3): global + follow-up ----------
+  // This form mirrors the Chat Room's #dispatch form in app.js: the lane
+  // select offers every live PARTICIPANTS lane; classification is the
+  // form's Complexity value sent verbatim ("auto" / "light" / "complex"
+  // — app.js does NOT derive classification from the prompt; the bridge
+  // resolves "auto" when it claims the job); route_mode is one of
+  // "auto" / "mac" / "idw-2"; kind is "dispatch", exactly as app.js.
+  let dispatchParent = null; // parent job row for a follow-up, else null
+
+  function routeLabel(mode) {
+    return mode === "mac" ? "M1 Mac" : mode === "idw-2" ? "IDW-2" : "Auto";
+  }
+  function fillDispatchLanes() {
+    $("x-lane").replaceChildren(
+      ...PARTICIPANTS.filter((p) => p.lane).map((p) => new Option(p.name, p.lane)),
+    );
+  }
+  function renderAgentChip() {
+    const p = PARTICIPANTS.find((x) => x.lane === $("x-lane").value);
+    const chip = $("x-agent-chip");
+    chip.replaceChildren();
+    if (!p) return;
+    chip.style.setProperty("--agent", colorFor(p.name));
+    chip.append(makeAvatar(p.name));
+    const n = document.createElement("span");
+    n.className = "x-agent-name";
+    n.textContent = p.name;
+    n.style.color = colorFor(p.name);
+    chip.append(n);
+  }
+  function openDispatch(preset) {
+    dispatchParent = preset && preset.parent ? preset.parent : null;
+    if (preset && preset.lane) $("x-lane").value = preset.lane;
+    if (preset && preset.route) $("x-route").value = preset.route;
+    $("x-prompt").value = ""; // always empty: never prefilled, not even for a follow-up
+    $("x-error").textContent = "";
+    $("x-title").textContent = dispatchParent ? "Dispatch follow-up" : "New dispatch";
+    const note = $("x-parent-note");
+    if (dispatchParent) {
+      note.hidden = false;
+      note.textContent = "Follow-up to: " + agentName(dispatchParent) + " · " + snippet(dispatchParent.prompt, 160);
+    } else {
+      note.hidden = true;
+      note.textContent = "";
+    }
+    renderAgentChip();
+    const d = $("dispatch");
+    if (typeof d.showModal === "function") d.showModal(); else d.setAttribute("open", "");
+  }
+  function closeDispatch() {
+    const d = $("dispatch");
+    if (typeof d.close === "function") d.close(); else d.removeAttribute("open");
+  }
+
+  fillDispatchLanes();
+  $("new-dispatch").addEventListener("click", () => openDispatch(null));
+  $("x-lane").addEventListener("change", renderAgentChip);
+  $("x-cancel").addEventListener("click", () => { dispatchParent = null; closeDispatch(); });
+  $("x-submit").addEventListener("click", () => {
+    const prompt = $("x-prompt").value.trim();
+    if (!prompt) { $("x-error").textContent = "A prompt is required to queue a job."; return; }
+    const lane = $("x-lane").value;
+    const p = PARTICIPANTS.find((x) => x.lane === lane);
+    if (!p) { $("x-error").textContent = "Pick a lane first."; return; }
+    const parent = dispatchParent;
+    const row = {
+      id: crypto.randomUUID(),
+      kind: "dispatch",
+      lane,
+      agent: p.name,
+      prompt,
+      classification: $("x-complexity").value || "auto",
+      route_mode: $("x-route").value || "auto",
+    };
+    dispatchParent = null;
+    closeDispatch();
+    openConfirm({
+      title: parent ? "Dispatch follow-up" : "New dispatch",
+      body: "Queue this job?\n" + p.name + " @ " + routeLabel(row.route_mode) +
+        " · complexity " + row.classification +
+        (parent ? "\nFollow-up to: " + agentName(parent) + " · " + snippet(parent.prompt, 120) : "") +
+        "\n\nPrompt: " + snippet(prompt, 240),
+      confirmLabel: "Queue job",
+      run: async () => {
+        await insertJob(row);
+        if (parent) recordFollowup(row.id, parent.id);
+      },
+      doneText: "Job queued for " + p.name + " @ " + routeLabel(row.route_mode),
+    });
   });
 
   function renderAll() {
